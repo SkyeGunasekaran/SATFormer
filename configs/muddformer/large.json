@@ -1,0 +1,85 @@
+{
+  "model": {
+    "source": "local_class",
+    "module": "models/muddformer/modeling_muddformer",
+    "class_name": "MUDDFormerForCausalLM",
+    "config_module": "models/muddformer/configuration_muddformer",
+    "config_class_name": "MUDDFormerConfig",
+    "from_pretrained": false,
+    "pretrained_path": null,
+    "config_overrides": {
+      "vocab_size": 32000,
+      "hidden_size": 1536,
+      "num_hidden_layers": 19,
+      "num_heads": 24,
+      "num_kv_heads": null,
+      "qkv_bias": false,
+      "qk_norm": true,
+      "window_size": null,
+      "rope_theta": 10000.0,
+      "max_position_embeddings": 4096,
+      "hidden_ratio": 4,
+      "intermediate_size": 6144,
+      "hidden_act": "swish",
+      "initializer_range": 0.02,
+      "elementwise_affine": true,
+      "norm_eps": 1e-6,
+      "use_cache": false,
+      "tie_word_embeddings": true,
+      "fuse_norm": true,
+      "fuse_swiglu": true,
+      "fuse_cross_entropy": true,
+      "fuse_linear_cross_entropy": false,
+
+      "num_ways": 4,
+      "param_realloc": true,
+      "use_pre_post_da_norm": true
+    }
+  },
+  "tokenizer": {
+    "name_or_path": "NousResearch/Llama-2-7b-hf",
+    "save_with_model": true
+  },
+  "data": {
+    "data_dir": "data",
+    "train_prefix": "train",
+    "val_prefix": "val",
+    "seq_length": 4096
+  },
+  "training": {
+    "batch_size": 16,
+    "gradient_accumulation_steps": 4,
+    "gradient_checkpointing": false,
+    "learning_rate": 1e-3,
+    "min_lr": 1e-4,
+    "warmup_tokens": 0.2,
+    "max_tokens": 20.0,
+    "lr_decay_style": "cosine",
+    "weight_decay": 0.1,
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "grad_clip": 1.0,
+    "dtype": "bfloat16",
+    "compile_model": false,
+    "fused_adamw": true
+  },
+  "checkpointing": {
+    "checkpoint_dir": "checkpoints/muddformer/large",
+    "checkpoint_interval": 2000,
+    "save_final_model": true
+  },
+  "logging": {
+    "log_interval": 10,
+    "eval_interval": 500,
+    "eval_iters": 100,
+    "wandb_project": "experiments",
+    "wandb_run_name": "muddformer-large"
+  },
+  "system": {
+    "seed": 42,
+    "num_workers": 16,
+    "prefetch_factor": 4,
+    "pin_memory": true,
+    "persistent_workers": true
+  }
+}

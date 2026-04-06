@@ -1,0 +1,85 @@
+{
+  "model": {
+    "source": "local_class",
+    "module": "models/resformer/modeling_resformer",
+    "class_name": "ResFormerForCausalLM",
+    "config_module": "models/resformer/configuration_resformer",
+    "config_class_name": "ResFormerConfig",
+    "from_pretrained": false,
+    "pretrained_path": null,
+    "config_overrides": {
+      "vocab_size": 32000,
+      "hidden_size": 2048,
+      "num_hidden_layers": 24,
+      "num_heads": 32,
+      "num_kv_heads": null,
+      "qkv_bias": false,
+      "qk_norm": true,
+      "window_size": null,
+      "rope_theta": 10000.0,
+      "max_position_embeddings": 4096,
+      "hidden_ratio": 4,
+      "intermediate_size": 5632,
+      "hidden_act": "swish",
+      "initializer_range": 0.02,
+      "elementwise_affine": true,
+      "norm_eps": 1e-6,
+      "use_cache": false,
+      "tie_word_embeddings": true,
+      "fuse_norm": true,
+      "fuse_swiglu": true,
+      "fuse_cross_entropy": true,
+      "fuse_linear_cross_entropy": false,
+      "use_value_residual": true,
+      "value_residual_lambda2_init": 0.5,
+      "value_residual_last_k": null
+
+    }
+  },
+  "tokenizer": {
+    "name_or_path": "NousResearch/Llama-2-7b-hf",
+    "save_with_model": true
+  },
+  "data": {
+    "data_dir": "data",
+    "train_prefix": "train",
+    "val_prefix": "val",
+    "seq_length": 4096
+  },
+  "training": {
+    "batch_size": 8,
+    "gradient_accumulation_steps": 8,
+    "gradient_checkpointing": false,
+    "learning_rate": 8e-4,
+    "min_lr": 8e-5,
+    "warmup_tokens": 0.3,
+    "max_tokens": 30.0,
+    "lr_decay_style": "cosine",
+    "weight_decay": 0.1,
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "grad_clip": 1.0,
+    "dtype": "bfloat16",
+    "compile_model": false,
+    "fused_adamw": true
+  },
+  "checkpointing": {
+    "checkpoint_dir": "checkpoints/resformer/xl",
+    "checkpoint_interval": 2000,
+    "save_final_model": true
+  },
+  "logging": {
+    "log_interval": 10,
+    "eval_interval": 500,
+    "eval_iters": 100,
+    "wandb_project": "experiments",
+    "wandb_run_name": "resformer-xl"
+  },
+  "system": {
+    "seed": 42,
+    "num_workers": 16,
+    "prefetch_factor": 4,
+    "pin_memory": true,
+    "persistent_workers": true
+  }
+}
