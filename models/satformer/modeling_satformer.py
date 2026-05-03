@@ -11,8 +11,9 @@ from transformers.modeling_utils import PreTrainedModel
 from transformers.utils import logging
 from transformers.utils.deprecation import deprecate_kwarg
 
-from models.hyperresformer.attn_gatedresformer import Attention
-from models.hyperresformer.configuration_gatedresformer import GatedResFormerConfig
+from models.satformer.attn_satformer import Attention
+from models.satformer.configuration_satformer import SATFormerConfig
+
 from fla.models.utils import Cache, FLAGenerationMixin
 from fla.modules import FusedCrossEntropyLoss, FusedLinearCrossEntropyLoss, RMSNorm
 from fla.modules import GatedMLP as TransformerMLP
@@ -29,10 +30,10 @@ except ImportError:
 logger = logging.get_logger(__name__)
 
 
-class GatedResFormerBlock(GradientCheckpointingLayer):
-    """A single HyperResFormer transformer block with optional hyper value residual."""
+class SATFormerBlock(GradientCheckpointingLayer):
+    """A single SATFormer transformer block with optional value residual."""
 
-    def __init__(self, config: GatedResFormerConfig, layer_idx: int):
+    def __init__(self, config: SATFormerConfig, layer_idx: int):
         super().__init__()
 
         self.config = config
@@ -49,7 +50,7 @@ class GatedResFormerBlock(GradientCheckpointingLayer):
             rope_theta=config.rope_theta,
             max_position_embeddings=config.max_position_embeddings,
             layer_idx=layer_idx,
-            # Hyper value residual config
+            # value residual config
             use_value_residual=config.use_value_residual,
             num_hidden_layers=config.num_hidden_layers,
             value_residual_gate=config.value_residual_gate,
@@ -110,11 +111,11 @@ class GatedResFormerBlock(GradientCheckpointingLayer):
         return outputs
 
 
-class GatedResFormerPreTrainedModel(PreTrainedModel):
-    config_class = GatedResFormerConfig
+class SATFormerPreTrainedModel(PreTrainedModel):
+    config_class = SATFormerConfig
     base_model_prefix = 'model'
     supports_gradient_checkpointing = True
-    _no_split_modules = ['HyperResFormerBlock']
+    _no_split_modules = ['SATFormerBlock']
     _supports_cache_class = True
 
     def __init__(self, *inputs, **kwargs):
@@ -147,23 +148,23 @@ class GatedResFormerPreTrainedModel(PreTrainedModel):
                     p /= math.sqrt(num_residuals_per_layer * self.config.num_hidden_layers)
 
 
-class GatedResFormerModel(GatedResFormerPreTrainedModel):
-    """HyperResFormer model without language model head."""
+class SATFormerModel(SATFormerPreTrainedModel):
+    """SATFormer model without language model head."""
 
-    def __init__(self, config: GatedResFormerConfig) -> GatedResFormerModel:
+    def __init__(self, config: SATFormerConfig) -> SATFormerModel:
         super().__init__(config)
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
 
         self.embeddings = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
         self.layers = nn.ModuleList([
-            GatedResFormerBlock(config, layer_idx)
+            SATFormerBlock(config, layer_idx)
             for layer_idx in range(config.num_hidden_layers)
         ])
         self.norm = (RMSNorm if config.fuse_norm else nn.RMSNorm)(config.hidden_size, eps=config.norm_eps)
 
         # No shared lambda manager — each mixing layer computes its own alpha from
-        # hidden states via HyperValueResidualMixing.
+        # hidden states via ValueResidualMixing.
 
         self.gradient_checkpointing = False
         self.post_init()
@@ -188,7 +189,7 @@ class GatedResFormerModel(GatedResFormerPreTrainedModel):
     ) -> tuple | BaseModelOutputWithPast:
         if output_attentions:
             warnings.warn(
-                "`HyperResFormerModel` does not support output attention weights now, "
+                "`SATFormerModel` does not support output attention weights now, "
                 "so `output_attentions` is set to `False`.",
             )
             output_attentions = False
@@ -264,14 +265,14 @@ class GatedResFormerModel(GatedResFormerPreTrainedModel):
         )
 
 
-class GatedResFormerForCausalLM(GatedResFormerPreTrainedModel, FLAGenerationMixin):
-    """HyperResFormer model with causal language modelling head."""
+class SATFormerForCausalLM(SATFormerPreTrainedModel, FLAGenerationMixin):
+    """SATFormer model with causal language modelling head."""
 
     _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config):
         super().__init__(config)
-        self.model = GatedResFormerModel(config)
+        self.model = SATFormerModel(config)
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.criterion = None

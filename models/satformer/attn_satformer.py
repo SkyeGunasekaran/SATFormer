@@ -28,7 +28,7 @@ except ImportError:
 logger = logging.get_logger(__name__)
 
 
-class GatedValueResidualMixing(nn.Module):
+class ValueResidualMixing(nn.Module):
 
     VALID_GATES = frozenset({'relu', 'sigmoid', 'softmax', 'softmax_sigmoid', 'tanh', 'identity'})
 
@@ -158,9 +158,9 @@ class Attention(nn.Module):
         self._should_apply_value_residual = self._check_should_apply_value_residual()
         self._should_produce_v1 = (use_value_residual and layer_idx == 0)
 
-        # Create the Gated value residual mixing module if needed
+        # Create the value residual mixing module if needed
         if self._should_apply_value_residual:
-            self.value_residual_mixing = HyperValueResidualMixing(
+            self.value_residual_mixing = ValueResidualMixing(
                 hidden_size=hidden_size,
                 num_kv_heads=self.num_kv_heads,
                 proj_bias=value_residual_proj_bias,
@@ -214,7 +214,7 @@ class Attention(nn.Module):
         # Store the original V projection from layer 0 for downstream layers
         v_base = v.clone() if self._should_produce_v1 else None
 
-        # Apply Gated value residual: V'_n = V_n + alpha(hidden_states) * V_1.
+        # Apply value residual: V'_n = V_n + alpha(hidden_states) * V_1.
         # hidden_states is the post-norm input — the same content-rich features used
         # for Q/K/V, making the mixing decision fully token-aware at negligible cost.
         if self._should_apply_value_residual and v1 is not None:

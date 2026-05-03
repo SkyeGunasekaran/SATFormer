@@ -2,8 +2,8 @@ import warnings
 from transformers.configuration_utils import PretrainedConfig
 
 
-class GatedResFormerConfig(PretrainedConfig):
-    model_type = 'GatedResFormer'
+class SATFormerConfig(PretrainedConfig):
+    model_type = 'SATFormer'
     keys_to_ignore_at_inference = ['past_key_values']
 
     def __init__(
@@ -34,7 +34,7 @@ class GatedResFormerConfig(PretrainedConfig):
         fuse_linear_cross_entropy: bool = False,
         use_l2warp: bool = False,
         vocab_size: int = 32000,
-        # Gated value residual hyperparameters
+        # value residual hyperparameters
         use_value_residual: bool = True,
         value_residual_gate: str = 'relu',
         value_residual_proj_bias: bool = False,
@@ -78,7 +78,7 @@ class GatedResFormerConfig(PretrainedConfig):
                 "If you observe issues like loss divergence, consider disabling this setting.",
             )
 
-        # Gated value residual hyperparameters
+        # value residual hyperparameters
         _valid_gates = {'relu', 'sigmoid', 'softmax', 'softmax_sigmoid', 'tanh', 'identity'}
         if value_residual_gate not in _valid_gates:
             raise ValueError(

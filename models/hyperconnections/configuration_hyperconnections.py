@@ -7,6 +7,46 @@ from transformers.configuration_utils import PretrainedConfig
 
 
 class HyperConnectionsConfig(PretrainedConfig):
+    """
+    Configuration class for Transformer with Dynamic Hyper-Connections.
+    
+    This configuration extends the standard Transformer config with 
+    hyper-connection specific parameters.
+    
+    Args:
+        hidden_size: Dimension of the hidden states
+        num_hidden_layers: Number of transformer layers
+        num_heads: Number of attention heads
+        num_kv_heads: Number of key-value heads (for GQA)
+        qkv_bias: Whether to use bias in QKV projections
+        qk_norm: Whether to apply normalization to Q and K
+        window_size: Window size for sliding window attention
+        rope_theta: Base for rotary position embeddings
+        max_position_embeddings: Maximum sequence length
+        hidden_ratio: Ratio for FFN hidden dimension
+        intermediate_size: FFN intermediate dimension (overrides hidden_ratio)
+        hidden_act: Activation function
+        initializer_range: Standard deviation for weight initialization
+        elementwise_affine: Whether to use learnable affine in normalization
+        norm_eps: Epsilon for normalization
+        use_cache: Whether to use KV cache
+        pad_token_id: Padding token ID
+        bos_token_id: Beginning of sequence token ID
+        eos_token_id: End of sequence token ID
+        tie_word_embeddings: Whether to tie input and output embeddings
+        fuse_norm: Whether to use fused normalization
+        fuse_swiglu: Whether to use fused SwiGLU
+        fuse_cross_entropy: Whether to use fused cross entropy
+        fuse_linear_cross_entropy: Whether to use fused linear cross entropy
+        use_l2warp: Whether to use L2 warp
+        vocab_size: Vocabulary size
+        
+        # Hyper-connection specific parameters
+        expansion_rate: Number of hyper hidden vectors (n in paper)
+        use_dynamic_hc: Whether to use dynamic hyper-connections
+        use_tanh: Whether to apply tanh to dynamic weights
+        hc_norm_type: Normalization type for dynamic HC ('layer' or 'rms')
+    """
 
     model_type = 'dhc'
     keys_to_ignore_at_inference = ['past_key_values']

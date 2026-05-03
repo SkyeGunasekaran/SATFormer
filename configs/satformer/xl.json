@@ -1,16 +1,16 @@
 {
   "model": {
     "source": "local_class",
-    "module": "models/gatedresformer/modeling_gatedresformer",
-    "class_name": "GatedResFormerForCausalLM",
-    "config_module": "models/hyperresformer/configuration_gatedresformer",
-    "config_class_name": "GatedResFormerConfig",
+    "module": "models/satformer/modeling_satformer",
+    "class_name": "SATFormerForCausalLM",
+    "config_module": "models/satformer/configuration_satformer",
+    "config_class_name": "SATFormerConfig",
     "from_pretrained": false,
     "pretrained_path": null,
     "config_overrides": {
       "vocab_size": 32000,
-      "hidden_size": 1536,
-      "num_hidden_layers": 19,
+      "hidden_size": 2048,
+      "num_hidden_layers": 24,
       "num_heads": 24,
       "num_kv_heads": null,
       "qkv_bias": false,
@@ -19,7 +19,7 @@
       "rope_theta": 10000.0,
       "max_position_embeddings": 4096,
       "hidden_ratio": 4,
-      "intermediate_size": 6144,
+      "intermediate_size": 5504,
       "hidden_act": "swish",
       "initializer_range": 0.02,
       "elementwise_affine": true,
@@ -47,13 +47,13 @@
     "seq_length": 4096
   },
   "training": {
-    "batch_size": 16,
-    "gradient_accumulation_steps": 4,
+    "batch_size": 8,
+    "gradient_accumulation_steps": 8,
     "gradient_checkpointing": false,
-    "learning_rate": 1e-3,
-    "min_lr": 1e-4,
-    "warmup_tokens": 0.2,
-    "max_tokens": 20.0,
+    "learning_rate": 8e-4,
+    "min_lr": 8e-5,
+    "warmup_tokens": 0.3,
+    "max_tokens": 30.0,
     "lr_decay_style": "cosine",
     "weight_decay": 0.1,
     "beta1": 0.9,
@@ -64,7 +64,7 @@
     "fused_adamw": true
   },
   "checkpointing": {
-    "checkpoint_dir": "checkpoints/gatedresformer/large",
+    "checkpoint_dir": "checkpoints/satformer/xl",
     "checkpoint_interval": 2000,
     "save_final_model": true
   },
@@ -73,7 +73,7 @@
     "eval_interval": 500,
     "eval_iters": 100,
     "wandb_project": "experiments",
-    "wandb_run_name": "gatedresformer-large"
+    "wandb_run_name": "satformer-xl"
   },
   "system": {
     "seed": 42,

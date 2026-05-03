@@ -1,3 +1,7 @@
+# Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
+# Implementation of Hyper-Connections from "Hyper-Connections" (ICLR 2025)
+# Paper: https://arxiv.org/abs/2409.19606
+
 from __future__ import annotations
 
 import math
@@ -8,7 +12,30 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class HyperConnection(nn.Module):
+class HyperConnections(nn.Module):
+    """
+    Hyper-Connections module that can serve as an alternative to residual connections.
+    
+    This implementation supports both Static Hyper-Connections (SHC) and 
+    Dynamic Hyper-Connections (DHC).
+    
+    The hyper-connection matrix HC is structured as:
+        HC = [[0,      B    ],
+              [Am,     Ar   ]]
+    
+    where:
+        - B (1 x n): weights for the layer output
+        - Am (n x 1): weights for computing layer input from hyper hidden matrix
+        - Ar (n x n): weights for width connections between hyper hidden vectors
+    
+    Args:
+        hidden_size: Dimension of the hidden states
+        expansion_rate: Number of hyper hidden vectors (n in the paper)
+        layer_idx: Index of the current layer (used for initialization)
+        dynamic: Whether to use dynamic hyper-connections
+        use_tanh: Whether to apply tanh to dynamic weights
+        norm_type: Type of normalization for dynamic weights ('layer' or 'rms')
+    """
     
     def __init__(
         self,
@@ -52,7 +79,12 @@ class HyperConnection(nn.Module):
             else:
                 self.norm = nn.RMSNorm(hidden_size)
             
-            self.dynamic_fused_proj = nn.Parameter(torch.zeros(hidden_size, n + 1 + 1))
+            # Linear projections for dynamic weights
+            # W_beta: (hidden_size,) -> scalar per hyper hidden
+            self.dynamic_beta_proj = nn.Parameter(torch.zeros(hidden_size))
+            
+            # W_alpha: (hidden_size,) -> (n+1) weights for Am and Ar combined
+            self.dynamic_alpha_proj = nn.Parameter(torch.zeros(hidden_size, n + 1))
             
             # Small initial scales for dynamic components (s_beta, s_alpha in paper)
             self.dynamic_beta_scale = nn.Parameter(torch.ones(1) * 0.01)
@@ -62,34 +94,44 @@ class HyperConnection(nn.Module):
         self,
         hyper_hidden: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-
+        """
+        Compute the connection weights (alpha and beta).
+        
+        Args:
+            hyper_hidden: Hyper hidden matrix of shape (batch, seq_len, n, hidden_size)
+            
+        Returns:
+            alpha: Shape (batch, seq_len, n, n+1) or (1, 1, n, n+1) for static
+            beta: Shape (batch, seq_len, n) or (1, 1, n) for static
+        """
         if self.dynamic:
             # Normalize the hyper hidden states
-            norm_h = self.norm(hyper_hidden)  # (B, L, N, D)
+            # hyper_hidden: (B, L, N, D)
+            norm_h = self.norm(hyper_hidden)
             
-            # (B, L, N, D) @ (D, N+2) -> (B, L, N, N+2)
-            dynamic_fused = torch.matmul(norm_h, self.dynamic_fused_proj)
-            
-            # Split: column 0 = beta, columns 1: = alpha
-            dynamic_beta = dynamic_fused[..., 0]        # (B, L, N)
-            dynamic_alpha = dynamic_fused[..., 1:]       # (B, L, N, N+1)
+            # Compute dynamic alpha weights
+            # norm_h @ dynamic_alpha_proj: (B, L, N, D) @ (D, N+1) -> (B, L, N, N+1)
+            dynamic_alpha = torch.matmul(norm_h, self.dynamic_alpha_proj)
             
             if self.use_tanh:
                 dynamic_alpha = torch.tanh(dynamic_alpha)
+            
+            dynamic_alpha = dynamic_alpha * self.dynamic_alpha_scale
+            
+            # Add static component: (B, L, N, N+1) + (N, N+1)
+            alpha = dynamic_alpha + self.static_alpha.unsqueeze(0).unsqueeze(0)
+            
+            # Compute dynamic beta weights
+            # norm_h @ dynamic_beta_proj: (B, L, N, D) @ (D,) -> (B, L, N)
+            dynamic_beta = torch.matmul(norm_h, self.dynamic_beta_proj)
+            
+            if self.use_tanh:
                 dynamic_beta = torch.tanh(dynamic_beta)
             
-            # alpha = static_alpha + dynamic_alpha * scale
-            alpha = torch.addcmul(
-                self.static_alpha.unsqueeze(0).unsqueeze(0),
-                dynamic_alpha,
-                self.dynamic_alpha_scale,
-            )
-            # beta = static_beta + dynamic_beta * scale
-            beta = torch.addcmul(
-                self.static_beta.unsqueeze(0).unsqueeze(0),
-                dynamic_beta,
-                self.dynamic_beta_scale,
-            )
+            dynamic_beta = dynamic_beta * self.dynamic_beta_scale
+            
+            # Add static component: (B, L, N) + (N,)
+            beta = dynamic_beta + self.static_beta.unsqueeze(0).unsqueeze(0)
         else:
             # Static weights only
             alpha = self.static_alpha.unsqueeze(0).unsqueeze(0)
@@ -101,10 +143,30 @@ class HyperConnection(nn.Module):
         self,
         hyper_hidden: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-
+        """
+        Perform width connections to compute layer input and intermediate states.
+        
+        This implements: mix_h = alpha^T @ H
+        where mix_h[:, :, 0, :] is the layer input (h_0)
+        and mix_h[:, :, 1:, :] are the intermediate states (H')
+        
+        Args:
+            hyper_hidden: Hyper hidden matrix of shape (batch, seq_len, n, hidden_size)
+            
+        Returns:
+            mix_h: Mixed hidden states of shape (batch, seq_len, n+1, hidden_size)
+            beta: Connection weights for depth connections
+        """
+        # Get connection weights
         alpha, beta = self._compute_weights(hyper_hidden)
         
-        mix_h = torch.einsum('blnm,blnd->blmd', alpha, hyper_hidden)
+        # Width connection: mix_h = alpha^T @ H
+        # alpha: (B, L, N, N+1) or (1, 1, N, N+1)
+        # hyper_hidden: (B, L, N, D)
+        # We want: (N+1, N) @ (N, D) -> (N+1, D) for each batch and seq position
+        # Using einsum: 'blnm,blnd->blmd' where m = n+1
+        alpha_t = alpha.transpose(-2, -1)  # (B, L, N+1, N) or (1, 1, N+1, N)
+        mix_h = torch.matmul(alpha_t, hyper_hidden)  # (B, L, N+1, D)
         
         return mix_h, beta
     
@@ -114,12 +176,33 @@ class HyperConnection(nn.Module):
         layer_output: torch.Tensor,
         beta: torch.Tensor,
     ) -> torch.Tensor:
-
+        """
+        Perform depth connections to combine layer output with intermediate states.
+        
+        This implements: H_out = beta^T * layer_output + H'
+        where H' = mix_h[:, :, 1:, :] (the intermediate states from width connection)
+        
+        Args:
+            mix_h: Mixed hidden states from width_connection, shape (batch, seq_len, n+1, hidden_size)
+            layer_output: Output from the transformer layer, shape (batch, seq_len, hidden_size)
+            beta: Connection weights, shape (batch, seq_len, n) or (1, 1, n)
+            
+        Returns:
+            hyper_hidden: Updated hyper hidden matrix of shape (batch, seq_len, n, hidden_size)
+        """
         # H' = mix_h[:, :, 1:, :], shape (B, L, N, D)
         h_prime = mix_h[:, :, 1:, :]
         
-        hyper_hidden = torch.einsum('bln,bld->blnd', beta, layer_output)
-        hyper_hidden += h_prime
+        # beta^T * layer_output: broadcast beta across hidden dimension
+        # beta: (B, L, N) or (1, 1, N)
+        # layer_output: (B, L, D)
+        # Result: (B, L, N, D)
+        beta_expanded = beta.unsqueeze(-1)  # (B, L, N, 1)
+        layer_output_expanded = layer_output.unsqueeze(-2)  # (B, L, 1, D)
+        weighted_output = beta_expanded * layer_output_expanded  # (B, L, N, D)
+        
+        # Depth connection: H_out = beta^T * layer_output + H'
+        hyper_hidden = weighted_output + h_prime
         
         return hyper_hidden
     
@@ -129,7 +212,18 @@ class HyperConnection(nn.Module):
         layer_fn: callable,
         **layer_kwargs,
     ) -> Tuple[torch.Tensor, any]:
-
+        """
+        Full hyper-connection forward pass.
+        
+        Args:
+            hyper_hidden: Hyper hidden matrix of shape (batch, seq_len, n, hidden_size)
+            layer_fn: The layer function to apply (attention or FFN)
+            **layer_kwargs: Additional arguments to pass to the layer
+            
+        Returns:
+            hyper_hidden: Updated hyper hidden matrix
+            layer_outputs: Additional outputs from the layer (e.g., attention weights, cache)
+        """
         # Width connection
         mix_h, beta = self.width_connection(hyper_hidden)
         
@@ -158,11 +252,31 @@ def expand_to_hyper_hidden(
     hidden_states: torch.Tensor,
     expansion_rate: int,
 ) -> torch.Tensor:
+    """
+    Expand hidden states to hyper hidden matrix by replicating n times.
     
-    return hidden_states.unsqueeze(-2).repeat(1, 1, expansion_rate, 1)
+    Args:
+        hidden_states: Shape (batch, seq_len, hidden_size)
+        expansion_rate: Number of copies (n)
+        
+    Returns:
+        hyper_hidden: Shape (batch, seq_len, n, hidden_size)
+    """
+    # Replicate along a new dimension
+    # (B, L, D) -> (B, L, 1, D) -> (B, L, N, D)
+    return hidden_states.unsqueeze(-2).expand(-1, -1, expansion_rate, -1).clone()
 
 
 def collapse_hyper_hidden(
     hyper_hidden: torch.Tensor,
 ) -> torch.Tensor:
+    """
+    Collapse hyper hidden matrix to single hidden state by summing.
+    
+    Args:
+        hyper_hidden: Shape (batch, seq_len, n, hidden_size)
+        
+    Returns:
+        hidden_states: Shape (batch, seq_len, hidden_size)
+    """
     return hyper_hidden.sum(dim=-2)

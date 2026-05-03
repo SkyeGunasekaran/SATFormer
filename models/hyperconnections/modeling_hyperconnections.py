@@ -23,7 +23,7 @@ from fla.modules.l2warp import l2_warp
 
 from models.hyperconnections.configuration_hyperconnections import HyperConnectionsConfig
 from models.hyperconnections.hyperconnections import (
-    HyperConnection,
+    HyperConnections,
     expand_to_hyper_hidden,
     collapse_hyper_hidden,
 )
@@ -77,7 +77,7 @@ class HyperConnectionsBlock(GradientCheckpointingLayer):
         )
         
         # Hyper-connection for attention
-        self.attn_hc = HyperConnection(
+        self.attn_hc = HyperConnections(
             hidden_size=config.hidden_size,
             expansion_rate=config.expansion_rate,
             layer_idx=attn_hc_idx,
@@ -99,7 +99,7 @@ class HyperConnectionsBlock(GradientCheckpointingLayer):
         )
         
         # Hyper-connection for MLP
-        self.mlp_hc = HyperConnection(
+        self.mlp_hc = HyperConnections(
             hidden_size=config.hidden_size,
             expansion_rate=config.expansion_rate,
             layer_idx=ffn_hc_idx,
@@ -117,8 +117,23 @@ class HyperConnectionsBlock(GradientCheckpointingLayer):
         use_cache: bool | None = False,
         **kwargs: Unpack[Any],
     ) -> tuple[torch.FloatTensor, ...]:
-
-        # Attention Block with Hyper-Connection 
+        """
+        Forward pass with hyper-connections.
+        
+        Args:
+            hyper_hidden: Hyper hidden matrix of shape (batch, seq_len, n, hidden_size)
+            attention_mask: Attention mask
+            past_key_values: Cached key-value pairs
+            output_attentions: Whether to output attention weights
+            use_cache: Whether to use KV cache
+            
+        Returns:
+            Tuple containing:
+                - Updated hyper_hidden
+                - Attention weights (if output_attentions)
+                - Updated past_key_values (if use_cache)
+        """
+        # ============ Attention Block with Hyper-Connection ============
         # Width connection for attention
         attn_mix_h, attn_beta = self.attn_hc.width_connection(hyper_hidden)
         
@@ -141,7 +156,7 @@ class HyperConnectionsBlock(GradientCheckpointingLayer):
         # Depth connection for attention
         hyper_hidden = self.attn_hc.depth_connection(attn_mix_h, attn_output, attn_beta)
         
-        # MLP Block with Hyper-Connection
+        # ============ MLP Block with Hyper-Connection ============
         # Width connection for MLP
         mlp_mix_h, mlp_beta = self.mlp_hc.width_connection(hyper_hidden)
         
@@ -170,6 +185,8 @@ class HyperConnectionsBlock(GradientCheckpointingLayer):
 
 
 class HyperConnectionsPreTrainedModel(PreTrainedModel):
+    """Base class for HyperConnections models with weight initialization."""
+
     config_class = HyperConnectionsConfig
     base_model_prefix = 'model'
     supports_gradient_checkpointing = True
@@ -179,12 +196,7 @@ class HyperConnectionsPreTrainedModel(PreTrainedModel):
     def __init__(self, *inputs, **kwargs):
         super().__init__(*inputs, **kwargs)
 
-    def _init_weights(
-        self,
-        module: nn.Module,
-        rescale_prenorm_residual: bool = False,
-        num_residuals_per_layer: int = 2,
-    ):
+    def _init_weights(self, module: nn.Module):
         if isinstance(module, (nn.Linear, nn.Conv1d)):
             nn.init.normal_(module.weight, mean=0.0, std=self.config.initializer_range)
             if module.bias is not None:
@@ -194,24 +206,26 @@ class HyperConnectionsPreTrainedModel(PreTrainedModel):
         elif hasattr(module, 'reset_parameters'):
             module.reset_parameters()
 
-        if rescale_prenorm_residual:
-            # Scale output weights by 1/sqrt(n) where n is expansion_rate
-            # This ensures the std of output remains consistent after summing hyper hidden vectors
-            p = None
-            if hasattr(module, 'o_proj'):
-                p = module.o_proj.weight
-            elif hasattr(module, 'down_proj'):
-                p = module.down_proj.weight
-            if p is not None:
-                nn.init.kaiming_uniform_(p, a=math.sqrt(5))
-                with torch.no_grad():
-                    # Scale by sqrt(n) as mentioned in the paper's implementation section
-                    p /= math.sqrt(num_residuals_per_layer * self.config.num_hidden_layers)
-                    # Additional scaling for hyper-connections
-                    p *= math.sqrt(self.config.expansion_rate)
+        # Per paper §4: scale output projection weights by 1/√n (expansion_rate)
+        # to keep output std consistent after collapse_hyper_hidden sums n copies
+        p = None
+        if hasattr(module, 'o_proj'):
+            p = module.o_proj.weight
+        elif hasattr(module, 'down_proj'):
+            p = module.down_proj.weight
+        if p is not None:
+            with torch.no_grad():
+                p /= math.sqrt(self.config.expansion_rate)  # divide, not multiply
 
 
 class HyperConnectionsModel(HyperConnectionsPreTrainedModel):
+    """
+    HyperConnections Transformer Model (decoder-only) with Hyper-Connections.
+    
+    This model uses hyper-connections instead of residual connections,
+    allowing dynamic adjustment of connection strengths between layers.
+    """
+
     def __init__(
         self,
         config: HyperConnectionsConfig,
@@ -328,6 +342,10 @@ class HyperConnectionsModel(HyperConnectionsPreTrainedModel):
 
 
 class HyperConnectionsForCausalLM(HyperConnectionsPreTrainedModel, FLAGenerationMixin):
+    """
+    HyperConnections Transformer Model with a language modeling head for causal LM.
+    """
+
     _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config: HyperConnectionsConfig):
