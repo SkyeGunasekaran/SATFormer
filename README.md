@@ -1,8 +1,6 @@
 <div align="center">
 
-# SATFormer: Selective Access Transformer
-
-**Transformers with Selective Access to Early Representations**
+# Transformers with Selective Access to Early Representations
 
 [![arXiv](https://img.shields.io/badge/arXiv-2605.03953-b31b1b.svg)](https://arxiv.org/abs/2605.03953)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
