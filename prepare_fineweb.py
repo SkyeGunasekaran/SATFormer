@@ -16,7 +16,7 @@ from transformers import AutoTokenizer
 
 FINEWEB_DATASET = "HuggingFaceFW/fineweb-edu"
 FINEWEB_SUBSET = "sample-100BT"
-TOKENIZER_ID = "meta-llama/Llama-2-7b-hf"
+TOKENIZER_ID = "NousResearch/Llama-2-7b-hf"
 
 DTYPE = np.uint16
 EOS_TOKEN = 2  # Standard Llama 2 EOS
